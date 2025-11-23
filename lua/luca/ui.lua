@@ -59,6 +59,16 @@ local function create_floating_window(config)
   vim.api.nvim_buf_set_name(input_bufnr, "luca-input")
   vim.api.nvim_buf_set_option(input_bufnr, "filetype", "luca-input")
   vim.api.nvim_buf_set_option(input_bufnr, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(input_bufnr, "bufhidden", "wipe")
+  vim.api.nvim_buf_set_option(input_bufnr, "swapfile", false)
+  
+  -- Suppress write errors for this buffer
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = input_bufnr,
+    callback = function()
+      -- Silently ignore write attempts
+    end,
+  })
   
   -- Create input window
   input_winid = vim.api.nvim_open_win(input_bufnr, false, {
