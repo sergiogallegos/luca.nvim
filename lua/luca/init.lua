@@ -19,7 +19,7 @@ local default_config = {
   },
   ui = {
     width = 0.35,  -- Width as fraction of screen (0.0 to 1.0) - smaller like Cursor
-    height = 0.6,  -- Height as fraction of screen (0.0 to 1.0)
+    height = 0.5,  -- Height as fraction of screen (0.0 to 1.0) - smaller so code is visible
     border = "rounded", -- Border style: "single", "double", "rounded", "solid", "shadow"
     position = "right",  -- Position: "right", "left", "center", "top", "bottom"
     winblend = 10,  -- Window transparency (0-100)
@@ -85,6 +85,10 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("LucaChat", function()
     require("luca.ui").open()
   end, { desc = "Open Luca chat window" })
+  
+  vim.api.nvim_create_user_command("LucaToggle", function()
+    require("luca.ui").toggle()
+  end, { desc = "Toggle Luca chat window" })
   
   vim.api.nvim_create_user_command("LucaHistory", function()
     require("luca.history").show()
@@ -168,8 +172,8 @@ function M.setup(user_config)
   -- Setup keymaps
   if config.keymaps.open then
     vim.keymap.set("n", config.keymaps.open, function()
-      require("luca.ui").open()
-    end, { desc = "Open Luca chat" })
+      require("luca.ui").toggle()  -- Toggle instead of just open
+    end, { desc = "Toggle Luca chat" })
   end
 end
 

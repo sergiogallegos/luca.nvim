@@ -35,9 +35,9 @@ local function create_floating_window(config)
     chat_row = input_row - chat_height
   elseif config.position == "right" then
     col = vim.o.columns - width - 2  -- Position on right side
-    -- Stack vertically: chat on top, input below
-    chat_row = math.floor((vim.o.lines - chat_height - input_height) / 2)
-    input_row = chat_row + chat_height
+    -- Cursor-style layout: chat at top-middle, input at bottom
+    chat_row = 2  -- Start near top
+    input_row = vim.o.lines - input_height - 2  -- At bottom
   elseif config.position == "left" then
     col = 2  -- Position on left side
     chat_row = math.floor((vim.o.lines - chat_height - input_height) / 2)
@@ -146,11 +146,20 @@ function M.setup(config)
   M.config = config
 end
 
+function M.toggle()
+  -- Toggle chat window
+  if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
+    M.close()
+  else
+    M.open()
+  end
+end
+
 function M.open()
   local luca_config = require("luca").config()
   local current_mode = modes.get_mode()
   
-  -- Check if already open
+  -- Check if already open - if so, just focus input
   if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
     if input_winid and vim.api.nvim_win_is_valid(input_winid) then
       vim.api.nvim_set_current_win(input_winid)

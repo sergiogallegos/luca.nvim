@@ -138,18 +138,20 @@ function M.send_message(message, callback)
     return
   end
   
-  -- Trim context if needed
+  -- Trim context if needed (do this early to avoid slow operations)
   if config.tokens and config.tokens.enable_trimming then
     context = tokens.trim_context(context, config.tokens.max_context_tokens)
   end
   
-  -- Add LSP info if enabled
+  -- Add LSP info if enabled (async to avoid blocking)
   if config.context.use_lsp then
-    local lsp = require("luca.lsp")
-    local ast_info = lsp.get_ast_info()
-    if ast_info then
-      context.lsp_info = lsp.format_lsp_context(ast_info)
-    end
+    vim.schedule(function()
+      local lsp = require("luca.lsp")
+      local ast_info = lsp.get_ast_info()
+      if ast_info then
+        context.lsp_info = lsp.format_lsp_context(ast_info)
+      end
+    end)
   end
   
   local history = require("luca.history").get_current()

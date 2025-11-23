@@ -22,35 +22,41 @@ local function get_project_files(max_files)
   -- Get current working directory
   local cwd = vim.fn.getcwd()
   
-  -- Use vim.fn.glob for cross-platform file finding
+  -- Limit search to avoid slowness - only search in common directories
+  local search_dirs = { ".", "src", "lib", "lua" }
   local patterns = { "*.lua", "*.py", "*.js", "*.ts", "*.go", "*.rs", "*.java", "*.cpp", "*.c", "*.h" }
   
-  for _, pattern in ipairs(patterns) do
+  for _, search_dir in ipairs(search_dirs) do
     if #files >= max_files then
       break
     end
     
-    -- Use vim.fn.globpath for cross-platform compatibility
-    local glob_pattern = cwd .. "/**/" .. pattern
-    local found_files = vim.fn.globpath(cwd, "**/" .. pattern, false, true)
-    
-    for _, filepath in ipairs(found_files) do
+    for _, pattern in ipairs(patterns) do
       if #files >= max_files then
         break
       end
       
-      -- Skip if file is too large (>100KB)
-      local file = io.open(filepath, "r")
-      if file then
-        local content = file:read("*all")
-        file:close()
+      local search_path = search_dir == "." and pattern or search_dir .. "/**/" .. pattern
+      local found_files = vim.fn.globpath(cwd, search_path, false, true)
+      
+      for _, filepath in ipairs(found_files) do
+        if #files >= max_files then
+          break
+        end
         
-        -- Only include files under 100KB to avoid token limits
-        if #content < 100000 then
-          table.insert(files, {
-            path = filepath,
-            content = content,
-          })
+        -- Skip if file is too large (>50KB to be faster)
+        local file = io.open(filepath, "r")
+        if file then
+          local content = file:read("*all")
+          file:close()
+          
+          -- Only include files under 50KB to avoid token limits and improve speed
+          if #content < 50000 then
+            table.insert(files, {
+              path = filepath,
+              content = content,
+            })
+          end
         end
       end
     end
