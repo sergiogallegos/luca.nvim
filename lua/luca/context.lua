@@ -69,6 +69,10 @@ function M.setup(config)
   M.config = config
 end
 
+function M.get_buffer_context()
+  return get_buffer_context()
+end
+
 function M.get_context()
   local context = {
     buffer = nil,

@@ -126,8 +126,40 @@ function M.send_message(message, callback)
   -- Update statusline
   statusline.update(current_agent, agent_config.model, "thinking")
   
+  -- Get context quickly (only buffer, skip slow file scanning initially)
+  local context = {}
+  if config.context and config.context.include_buffer then
+    context.buffer = require("luca.context").get_buffer_context()
+  end
+  
+  -- Skip project files for speed (can be enabled in config if needed)
+  -- Users can enable it if they want, but it's slow
+  if config.context and config.context.include_tree and config.context.max_files and config.context.max_files > 0 then
+    -- Limit to 2 files for speed
+    local quick_context = require("luca.context")
+    local files = quick_context.get_context().files or {}
+    if #files > 2 then
+      context.files = { files[1], files[2] }  -- Only first 2
+    else
+      context.files = files
+    end
+  end
+  
+  -- Trim context if needed
+  if config.tokens and config.tokens.enable_trimming then
+    context = tokens.trim_context(context, config.tokens.max_context_tokens)
+  end
+  
+  -- Add LSP info if enabled (skip if slow)
+  if config.context.use_lsp then
+    local lsp = require("luca.lsp")
+    local ast_info = lsp.get_ast_info()
+    if ast_info then
+      context.lsp_info = lsp.format_lsp_context(ast_info)
+    end
+  end
+  
   -- Check cache
-  local context = require("luca.context").get_context()
   local cache_key = cache.generate_key(context, message)
   local cached = cache.get(cache_key)
   if cached then
@@ -136,22 +168,6 @@ function M.send_message(message, callback)
       callback(cached)
     end
     return
-  end
-  
-  -- Trim context if needed (do this early to avoid slow operations)
-  if config.tokens and config.tokens.enable_trimming then
-    context = tokens.trim_context(context, config.tokens.max_context_tokens)
-  end
-  
-  -- Add LSP info if enabled (async to avoid blocking)
-  if config.context.use_lsp then
-    vim.schedule(function()
-      local lsp = require("luca.lsp")
-      local ast_info = lsp.get_ast_info()
-      if ast_info then
-        context.lsp_info = lsp.format_lsp_context(ast_info)
-      end
-    end)
   end
   
   local history = require("luca.history").get_current()
