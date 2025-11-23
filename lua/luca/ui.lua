@@ -25,11 +25,16 @@ local function create_floating_window(config)
   if config.position == "right" then
     col = vim.o.columns - width - 2  -- Position on right side
     chat_row = 2  -- Start near top
-    input_row = vim.o.lines - input_height - 2  -- At bottom
-    -- Calculate max chat height to avoid overlap with input
-    local max_chat_height = input_row - chat_row - 4  -- Leave gap between chat and input
+    -- Move input window up to avoid statusline (leave ~3 lines for statusline)
+    input_row = vim.o.lines - input_height - 3  -- Up from bottom to avoid statusline
+    -- Calculate chat height to fill space between top and input, with small gap
+    local gap = 2  -- Small gap between chat and input windows
+    local max_chat_height = input_row - chat_row - gap
     local desired_chat_height = math.floor(vim.o.lines * config.height)
+    -- Use the maximum available height (fill space down to input window)
     chat_height = math.min(desired_chat_height, max_chat_height)
+    -- But ensure we use most of the available space
+    chat_height = math.max(chat_height, max_chat_height - 2)  -- Use almost all space, leave small gap
     -- Ensure minimum height for usability
     chat_height = math.max(chat_height, 10)
   elseif config.position == "center" then
