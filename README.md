@@ -151,6 +151,7 @@ See `lua/luca/config.example.lua` for a complete example configuration.
 ### Commands
 
 - `:LucaChat` - Open the chat window
+- `:LucaToggle` - Toggle the chat window (open/close)
 - `:LucaHistory` - View chat history
 - `:LucaAgent [name]` - Switch agent (or show selector if no name provided)
 - `:LucaApply` - Apply the last code suggestion
@@ -185,6 +186,7 @@ Type `/` followed by a command in the chat input:
 1. **Chat with AI**: Open chat, type your question, press Enter
 2. **Streaming Responses**: See responses appear in real-time
 3. **Apply Code**: When AI suggests code, use `:LucaApply` or `<C-a>` in preview
+4. **Close Window**: Press `<Esc>` in the chat or input window, or use `:LucaToggle` to toggle
 4. **Multi-file Support**: AI understands your project context automatically
 5. **Agent Switching**: Press `<C-a>` in chat to switch between configured agents
 

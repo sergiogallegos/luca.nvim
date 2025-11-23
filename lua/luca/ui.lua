@@ -118,6 +118,20 @@ local function create_floating_window(config)
     end,
   })
   
+  -- Also close with Esc
+  vim.api.nvim_buf_set_keymap(input_bufnr, "n", "<Esc>", "", {
+    callback = function()
+      M.close()
+    end,
+  })
+  
+  -- Close chat window with Esc too
+  vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<Esc>", "", {
+    callback = function()
+      M.close()
+    end,
+  })
+  
   -- Add keymaps for chat buffer
   vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<C-a>", "", {
     callback = function()
