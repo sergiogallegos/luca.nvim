@@ -19,7 +19,7 @@ local default_config = {
   },
   ui = {
     width = 0.35,  -- Width as fraction of screen (0.0 to 1.0) - smaller like Cursor
-    height = 0.5,  -- Height as fraction of screen (0.0 to 1.0) - smaller so code is visible
+    height = 0.35,  -- Height as fraction of screen (0.0 to 1.0) - much smaller so code is visible
     border = "rounded", -- Border style: "single", "double", "rounded", "solid", "shadow"
     position = "right",  -- Position: "right", "left", "center", "top", "bottom"
     winblend = 10,  -- Window transparency (0-100)

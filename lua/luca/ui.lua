@@ -36,6 +36,9 @@ local function create_floating_window(config)
   elseif config.position == "right" then
     col = vim.o.columns - width - 2  -- Position on right side
     -- Cursor-style layout: chat at top-middle, input at bottom
+    -- Calculate chat height to leave space for input and margins
+    local available_height = vim.o.lines - input_height - 10  -- Leave space for input and margins
+    chat_height = math.min(chat_height, available_height)  -- Don't exceed available space
     chat_row = 2  -- Start near top
     input_row = vim.o.lines - input_height - 2  -- At bottom
   elseif config.position == "left" then
@@ -51,6 +54,10 @@ local function create_floating_window(config)
   vim.api.nvim_buf_set_option(chat_bufnr, "buftype", "nofile")
   
   -- Create chat window using window manager
+  -- Ensure chat window doesn't overlap with input window
+  local max_chat_height = input_row - chat_row - 2  -- Leave gap between chat and input
+  chat_height = math.min(chat_height, max_chat_height)
+  
   chat_winid = window.create_resizable_window(config, chat_bufnr, {
     width = width,
     height = chat_height,
