@@ -14,15 +14,21 @@ local function make_request(provider, messages, on_chunk, on_complete)
     return
   end
   
+  -- Determine API endpoint based on provider type
+  local is_ollama = agent_config.base_url and agent_config.base_url:match("ollama") or provider == "ollama"
+  local is_local = is_ollama or (agent_config.base_url and agent_config.base_url:match("localhost")) or (agent_config.base_url and agent_config.base_url:match("127%.0%.0%.1"))
+  
   -- Check if API key is required (Ollama and other local providers don't need it)
-  local requires_api_key = agent_config.requires_api_key ~= false
+  local requires_api_key = agent_config.requires_api_key
+  if requires_api_key == nil then
+    -- Auto-detect: local providers don't need API keys
+    requires_api_key = not is_local
+  end
+  
   if requires_api_key and not agent_config.api_key then
     vim.notify("No API key configured for " .. provider, vim.log.levels.ERROR)
     return
   end
-  
-  -- Determine API endpoint based on provider type
-  local is_ollama = agent_config.base_url and agent_config.base_url:match("ollama") or provider == "ollama"
   local endpoint = is_ollama and "/api/chat" or "/chat/completions"
   local url = agent_config.base_url .. endpoint
   
