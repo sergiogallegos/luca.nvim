@@ -108,11 +108,11 @@ require("luca").setup({
   
   -- UI configuration
   ui = {
-    width = 0.6,
-    height = 0.7,
-    border = "rounded",
-    position = "center",
-    winblend = 10,
+    width = 0.35,  -- Width as fraction (0.0-1.0) - default: smaller right-side window
+    height = 0.6,  -- Height as fraction (0.0-1.0)
+    border = "rounded",  -- "single", "double", "rounded", "solid", "shadow"
+    position = "right",  -- "right", "left", "center", "top", "bottom"
+    winblend = 10,  -- Transparency (0-100)
     title = " Luca ",
   },
   

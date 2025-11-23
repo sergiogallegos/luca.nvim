@@ -18,12 +18,12 @@ local default_config = {
     },
   },
   ui = {
-    width = 0.35,  -- Smaller width like Cursor chat
-    height = 0.6,  -- Less height
-    border = "rounded",
-    position = "right",  -- Position on right side like Cursor
-    winblend = 10,
-    title = " Luca ",
+    width = 0.35,  -- Width as fraction of screen (0.0 to 1.0) - smaller like Cursor
+    height = 0.6,  -- Height as fraction of screen (0.0 to 1.0)
+    border = "rounded", -- Border style: "single", "double", "rounded", "solid", "shadow"
+    position = "right",  -- Position: "right", "left", "center", "top", "bottom"
+    winblend = 10,  -- Window transparency (0-100)
+    title = " Luca ",  -- Window title
   },
   history = {
     enabled = true,
