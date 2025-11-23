@@ -14,26 +14,34 @@ local function create_floating_window(config)
   local adapted_border = theme.adapt_border(config)
   
   local width = math.floor(vim.o.columns * config.width)
-  local height = math.floor(vim.o.lines * config.height)
+  local chat_height = math.floor(vim.o.lines * config.height)
+  local input_height = 3  -- Fixed small height for input
   
   local col = 0
-  local row = 0
+  local chat_row = 0
+  local input_row = 0
   
   if config.position == "center" then
     col = math.floor((vim.o.columns - width) / 2)
-    row = math.floor((vim.o.lines - height) / 2)
+    chat_row = math.floor((vim.o.lines - chat_height - input_height) / 2)
+    input_row = chat_row + chat_height
   elseif config.position == "top" then
     col = math.floor((vim.o.columns - width) / 2)
-    row = 1
+    chat_row = 1
+    input_row = chat_row + chat_height
   elseif config.position == "bottom" then
     col = math.floor((vim.o.columns - width) / 2)
-    row = vim.o.lines - height - 1
+    input_row = vim.o.lines - input_height - 1
+    chat_row = input_row - chat_height
   elseif config.position == "right" then
     col = vim.o.columns - width - 2  -- Position on right side
-    row = math.floor((vim.o.lines - height) / 2)  -- Center vertically
+    -- Stack vertically: chat on top, input below
+    chat_row = math.floor((vim.o.lines - chat_height - input_height) / 2)
+    input_row = chat_row + chat_height
   elseif config.position == "left" then
     col = 2  -- Position on left side
-    row = math.floor((vim.o.lines - height) / 2)  -- Center vertically
+    chat_row = math.floor((vim.o.lines - chat_height - input_height) / 2)
+    input_row = chat_row + chat_height
   end
   
   -- Create chat buffer
@@ -45,9 +53,9 @@ local function create_floating_window(config)
   -- Create chat window using window manager
   chat_winid = window.create_resizable_window(config, chat_bufnr, {
     width = width,
-    height = height - 3,
+    height = chat_height,
     col = col,
-    row = row,
+    row = chat_row,
     border = adapted_border,
     title = config.title,
     winblend = config.winblend,
@@ -76,13 +84,13 @@ local function create_floating_window(config)
     end,
   })
   
-  -- Create input window
+  -- Create input window (positioned right below chat window)
   input_winid = vim.api.nvim_open_win(input_bufnr, false, {
     relative = "editor",
     width = width,
-    height = 2,
+    height = input_height,
     col = col,
-    row = row + height - 2,
+    row = input_row,
     border = adapted_border,
     title = " Input ",
     style = "minimal",
