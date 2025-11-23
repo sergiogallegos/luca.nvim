@@ -13,14 +13,26 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
   if is_ollama then
     -- Use curl for Ollama (more reliable streaming)
     local cmd
+    local temp_file = nil
+    
     if vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1 then
-      local body_escaped = body:gsub('"', '\\"')
-      cmd = string.format(
-        'curl -s -N -X POST "%s" -H "Content-Type: application/json" -d "%s"',
-        url,
-        body_escaped
-      )
+      -- Windows: Use temp file to avoid JSON escaping issues
+      temp_file = vim.fn.tempname() .. ".json"
+      local file = io.open(temp_file, "w")
+      if file then
+        file:write(body)
+        file:close()
+        cmd = string.format(
+          'curl -s -N -X POST "%s" -H "Content-Type: application/json" -d "@%s"',
+          url,
+          temp_file:gsub("\\", "/")
+        )
+      else
+        vim.notify("Failed to create temp file for Ollama request", vim.log.levels.ERROR)
+        return
+      end
     else
+      -- Unix: Use single quotes to avoid escaping issues
       cmd = string.format(
         "curl -s -N -X POST '%s' -H 'Content-Type: application/json' -d '%s'",
         url,
@@ -33,28 +45,38 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
     
     if not handle then
       vim.notify("Failed to connect to Ollama. Is it running?", vim.log.levels.ERROR)
+      if temp_file then
+        os.remove(temp_file)
+      end
       return
     end
     
     for line in handle:lines() do
       if line and line ~= "" then
         local ok, data = pcall(vim.json.decode, line)
-        if ok and data.message and data.message.content then
-          local content = data.message.content
-          full_response = full_response .. content
-          if on_chunk then
-            vim.schedule(function()
-              on_chunk(content)
-            end)
+        if ok and data then
+          if data.message and data.message.content then
+            local content = data.message.content
+            full_response = full_response .. content
+            if on_chunk then
+              vim.schedule(function()
+                on_chunk(content)
+              end)
+            end
           end
-        end
-        if ok and data.done then
-          break
+          if data.done then
+            break
+          end
         end
       end
     end
     
     handle:close()
+    
+    -- Clean up temp file
+    if temp_file then
+      os.remove(temp_file)
+    end
     
     if on_complete then
       vim.schedule(function()
