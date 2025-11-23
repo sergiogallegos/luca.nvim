@@ -6,27 +6,35 @@ local windows = {}
 local resize_mode = false
 
 function M.create_resizable_window(config, bufnr, opts)
-  local width = math.floor(vim.o.columns * (opts.width or config.width))
-  local height = math.floor(vim.o.lines * (opts.height or config.height))
+  -- Use opts values directly if provided (they're already calculated), otherwise calculate from config
+  local width = opts.width or math.floor(vim.o.columns * (config.width or 0.5))
+  local height = opts.height or math.floor(vim.o.lines * (config.height or 0.5))
   
-  local col = 0
-  local row = 0
+  -- Use opts position values if provided, otherwise calculate from config
+  local col = opts.col
+  local row = opts.row
   
-  if opts.position == "center" or config.position == "center" then
-    col = math.floor((vim.o.columns - width) / 2)
-    row = math.floor((vim.o.lines - height) / 2)
-  elseif opts.position == "top" or config.position == "top" then
-    col = math.floor((vim.o.columns - width) / 2)
-    row = 1
-  elseif opts.position == "bottom" or config.position == "bottom" then
-    col = math.floor((vim.o.columns - width) / 2)
-    row = vim.o.lines - height - 1
-  elseif opts.position == "right" then
-    col = vim.o.columns - width - 1
-    row = math.floor((vim.o.lines - height) / 2)
-  elseif opts.position == "left" then
-    col = 1
-    row = math.floor((vim.o.lines - height) / 2)
+  if not col or not row then
+    -- Calculate position if not provided in opts
+    col = 0
+    row = 0
+    
+    if opts.position == "center" or config.position == "center" then
+      col = math.floor((vim.o.columns - width) / 2)
+      row = math.floor((vim.o.lines - height) / 2)
+    elseif opts.position == "top" or config.position == "top" then
+      col = math.floor((vim.o.columns - width) / 2)
+      row = 1
+    elseif opts.position == "bottom" or config.position == "bottom" then
+      col = math.floor((vim.o.columns - width) / 2)
+      row = vim.o.lines - height - 1
+    elseif opts.position == "right" then
+      col = vim.o.columns - width - 1
+      row = math.floor((vim.o.lines - height) / 2)
+    elseif opts.position == "left" then
+      col = 1
+      row = math.floor((vim.o.lines - height) / 2)
+    end
   end
   
   local winid = vim.api.nvim_open_win(bufnr, true, {

@@ -30,6 +30,8 @@ local function create_floating_window(config)
     local max_chat_height = input_row - chat_row - 4  -- Leave gap between chat and input
     local desired_chat_height = math.floor(vim.o.lines * config.height)
     chat_height = math.min(desired_chat_height, max_chat_height)
+    -- Ensure minimum height for usability
+    chat_height = math.max(chat_height, 10)
   elseif config.position == "center" then
     col = math.floor((vim.o.columns - width) / 2)
     chat_height = math.floor(vim.o.lines * config.height)
@@ -52,7 +54,12 @@ local function create_floating_window(config)
     input_row = chat_row + chat_height
   end
   
-  -- Create chat buffer
+  -- Create chat buffer (check if it exists first and delete it)
+  local existing_chat_buf = vim.fn.bufnr("luca-chat")
+  if existing_chat_buf ~= -1 and vim.api.nvim_buf_is_valid(existing_chat_buf) then
+    vim.api.nvim_buf_delete(existing_chat_buf, { force = true })
+  end
+  
   chat_bufnr = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(chat_bufnr, "luca-chat")
   vim.api.nvim_buf_set_option(chat_bufnr, "filetype", "luca-chat")
@@ -76,7 +83,12 @@ local function create_floating_window(config)
   vim.api.nvim_win_set_option(chat_winid, "relativenumber", false)
   vim.api.nvim_win_set_option(chat_winid, "cursorline", false)
   
-  -- Create input buffer
+  -- Create input buffer (check if it exists first and delete it)
+  local existing_input_buf = vim.fn.bufnr("luca-input")
+  if existing_input_buf ~= -1 and vim.api.nvim_buf_is_valid(existing_input_buf) then
+    vim.api.nvim_buf_delete(existing_input_buf, { force = true })
+  end
+  
   input_bufnr = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(input_bufnr, "luca-input")
   vim.api.nvim_buf_set_option(input_bufnr, "filetype", "luca-input")
@@ -212,12 +224,23 @@ function M.open()
 end
 
 function M.close()
+  -- Close windows first
   if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
     vim.api.nvim_win_close(chat_winid, true)
   end
   if input_winid and vim.api.nvim_win_is_valid(input_winid) then
     vim.api.nvim_win_close(input_winid, true)
   end
+  
+  -- Delete buffers to prevent "buffer already exists" error
+  if chat_bufnr and vim.api.nvim_buf_is_valid(chat_bufnr) then
+    vim.api.nvim_buf_delete(chat_bufnr, { force = true })
+  end
+  if input_bufnr and vim.api.nvim_buf_is_valid(input_bufnr) then
+    vim.api.nvim_buf_delete(input_bufnr, { force = true })
+  end
+  
+  -- Clear references
   chat_bufnr = nil
   chat_winid = nil
   input_bufnr = nil
