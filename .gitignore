@@ -1,0 +1,9 @@
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+*.log
+luca_history.json
+
