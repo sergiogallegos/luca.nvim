@@ -67,11 +67,15 @@ local function create_floating_window(config)
     height = 2,
     col = col,
     row = row + height - 2,
-    border = config.border,
+    border = adapted_border,
     title = " Input ",
     style = "minimal",
-    winblend = config.winblend,
   })
+  
+  -- Set winblend option after window creation
+  if config.winblend then
+    vim.api.nvim_win_set_option(input_winid, "winblend", config.winblend)
+  end
   
   -- Configure input window
   vim.api.nvim_win_set_option(input_winid, "wrap", true)
