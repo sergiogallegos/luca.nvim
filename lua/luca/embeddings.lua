@@ -13,10 +13,13 @@ end
 function M.generate_embedding(text)
   -- Placeholder - in production, use an embedding API
   -- For now, create a simple hash-based embedding
+  -- Using Lua 5.1 compatible operations (no bitwise operators)
   local hash = 0
   for i = 1, #text do
-    hash = ((hash << 5) - hash) + string.byte(text, i)
-    hash = hash & hash -- Convert to 32-bit integer
+    -- Equivalent to: hash = ((hash << 5) - hash) + string.byte(text, i)
+    hash = ((hash * 32) - hash) + string.byte(text, i)
+    -- Keep hash in reasonable range (simulate 32-bit integer)
+    hash = hash % 2147483647 -- 2^31 - 1
   end
   return { hash }
 end
