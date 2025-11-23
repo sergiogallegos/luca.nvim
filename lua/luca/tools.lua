@@ -33,7 +33,7 @@ function M.format_tools_for_agent()
   for name, tool in pairs(tools) do
     table.insert(formatted, {
       type = "function",
-      function = {
+      ["function"] = {
         name = name,
         description = tool.description,
         parameters = tool.parameters or {},
