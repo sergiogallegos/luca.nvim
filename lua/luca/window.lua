@@ -38,8 +38,12 @@ function M.create_resizable_window(config, bufnr, opts)
     border = opts.border or config.border,
     title = opts.title or "",
     style = "minimal",
-    winblend = opts.winblend or config.winblend,
   })
+  
+  -- Set winblend option after window creation (it's not a valid option for nvim_open_win)
+  if opts.winblend or config.winblend then
+    vim.api.nvim_win_set_option(winid, "winblend", opts.winblend or config.winblend)
+  end
   
   -- Store window info
   windows[winid] = {
