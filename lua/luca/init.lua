@@ -18,10 +18,10 @@ local default_config = {
     },
   },
   ui = {
-    width = 0.6,
-    height = 0.7,
+    width = 0.35,  -- Smaller width like Cursor chat
+    height = 0.6,  -- Less height
     border = "rounded",
-    position = "center",
+    position = "right",  -- Position on right side like Cursor
     winblend = 10,
     title = " Luca ",
   },

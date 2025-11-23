@@ -16,8 +16,10 @@ function M.update(agent_name, model_name, status)
   statusline_component.model = model_name
   statusline_component.status = status or "idle"
   
-  -- Trigger statusline update
-  vim.cmd("redrawstatus")
+  -- Trigger statusline update (schedule to avoid fast event context error)
+  vim.schedule(function()
+    vim.cmd("redrawstatus")
+  end)
 end
 
 function M.get_component()

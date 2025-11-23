@@ -28,6 +28,12 @@ local function create_floating_window(config)
   elseif config.position == "bottom" then
     col = math.floor((vim.o.columns - width) / 2)
     row = vim.o.lines - height - 1
+  elseif config.position == "right" then
+    col = vim.o.columns - width - 2  -- Position on right side
+    row = math.floor((vim.o.lines - height) / 2)  -- Center vertically
+  elseif config.position == "left" then
+    col = 2  -- Position on left side
+    row = math.floor((vim.o.lines - height) / 2)  -- Center vertically
   end
   
   -- Create chat buffer
