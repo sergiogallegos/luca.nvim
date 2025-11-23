@@ -16,7 +16,7 @@ require("luca").setup({
     providers = {
       ollama = {
         api_key = nil, -- Not needed for local Ollama
-        model = "llama2", -- Change to your preferred model
+        model = "deepseek-r1:8b", -- Use exact model name from 'ollama list'
         base_url = "http://localhost:11434", -- Default Ollama port
         requires_api_key = false, -- Important: set to false
         temperature = 0.7,
@@ -27,19 +27,34 @@ require("luca").setup({
 })
 ```
 
+**Note**: Use the exact model name as shown in `ollama list`. For example:
+- `deepseek-r1:8b` (your current model)
+- `llama2`
+- `codellama`
+- `mistral`
+- Include the tag/version if present (e.g., `:8b`, `:7b`, `:13b`)
+
 ## Available Models
 
 Popular coding models for Ollama:
+- `deepseek-r1:8b` - DeepSeek R1 model (8B parameters) - **You have this!**
 - `codellama` - Code-focused Llama model
 - `deepseek-coder` - Strong coding capabilities
 - `mistral` - General purpose, good for code
 - `llama2` - General purpose
 - `phi` - Small, fast model
 
-Pull a model:
+Check your installed models:
+```bash
+ollama list
+```
+
+Pull a new model:
 ```bash
 ollama pull codellama
 ```
+
+**Important**: Use the exact model name from `ollama list`, including any tags (like `:8b`, `:7b`, etc.)
 
 ## Usage
 

@@ -20,7 +20,7 @@ return {
       -- Example: Local Ollama
       ollama = {
         api_key = nil, -- Not needed for local Ollama
-        model = "llama2", -- or "mistral", "codellama", "deepseek-coder", etc.
+        model = "deepseek-r1:8b", -- Use exact model name from 'ollama list'
         base_url = "http://localhost:11434", -- Ollama default port
         requires_api_key = false, -- Ollama doesn't need API key
         temperature = 0.7,

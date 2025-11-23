@@ -49,22 +49,34 @@ A powerful AI assistant plugin for Neovim that brings Cursor-like chat functiona
 
 Using [lazy.nvim](https://github.com/folke/lazy.nvim):
 
+Add to your Neovim config (usually `~/.config/nvim/lua/plugins/` or `~/.config/nvim/init.lua`):
+
 ```lua
 {
-  "your-username/luca.nvim",
+  "sergiogallegos/luca.nvim",
   dependencies = {
     "nvim-lua/plenary.nvim",
     "nvim-treesitter/nvim-treesitter",
   },
   config = function()
     require("luca").setup({
-      -- Your configuration here
+      -- Your configuration here (see below)
     })
   end,
 }
 ```
 
 ## Configuration
+
+**Important**: Put this configuration in your Neovim config file, NOT in the plugin files!
+
+### Where to put the config:
+
+- **lazy.nvim users**: `~/.config/nvim/lua/plugins/luca.lua` or in your main config
+- **packer.nvim users**: In your `plugins.lua` file
+- **vim-plug users**: In your `init.vim` or `init.lua`
+
+### Example Configuration:
 
 ```lua
 require("luca").setup({
@@ -85,7 +97,7 @@ require("luca").setup({
       -- Example: Local Ollama (no API key needed)
       ollama = {
         api_key = nil, -- Not needed for local Ollama
-        model = "llama2", -- or "mistral", "codellama", "deepseek-coder", etc.
+        model = "deepseek-r1:8b", -- Use exact name from 'ollama list'
         base_url = "http://localhost:11434", -- Ollama default port
         requires_api_key = false,
         temperature = 0.7,
