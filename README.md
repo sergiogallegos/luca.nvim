@@ -82,7 +82,15 @@ require("luca").setup({
         frequency_penalty = 0.0, -- Optional
         presence_penalty = 0.0,  -- Optional
       },
-      -- Add more providers (Anthropic, Ollama, etc.)
+      -- Example: Local Ollama (no API key needed)
+      ollama = {
+        api_key = nil, -- Not needed for local Ollama
+        model = "llama2", -- or "mistral", "codellama", "deepseek-coder", etc.
+        base_url = "http://localhost:11434", -- Ollama default port
+        requires_api_key = false,
+        temperature = 0.7,
+        num_predict = 2048, -- Ollama uses num_predict instead of max_tokens
+      },
     },
   },
   
@@ -197,8 +205,3 @@ Contributions are welcome! This is an open-source project named after my son, an
 ## License
 
 MIT
-
-## License
-
-MIT
-

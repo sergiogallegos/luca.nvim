@@ -62,9 +62,10 @@ local default_config = {
 function M.setup(user_config)
   config = vim.tbl_deep_extend("force", default_config, user_config or {})
   
-  -- Validate API keys
+  -- Validate API keys (skip for providers that don't need them)
   for name, provider in pairs(config.agents.providers) do
-    if not provider.api_key then
+    local requires_key = provider.requires_api_key ~= false
+    if requires_key and not provider.api_key then
       provider.api_key = os.getenv(string.upper(name) .. "_API_KEY")
     end
   end

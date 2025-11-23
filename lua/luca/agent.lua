@@ -9,46 +9,83 @@ local function make_request(provider, messages, on_chunk, on_complete)
   local config = require("luca").config()
   local agent_config = config.agents.providers[provider]
   
-  if not agent_config or not agent_config.api_key then
+  if not agent_config then
+    vim.notify("Agent not configured: " .. provider, vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Check if API key is required (Ollama and other local providers don't need it)
+  local requires_api_key = agent_config.requires_api_key ~= false
+  if requires_api_key and not agent_config.api_key then
     vim.notify("No API key configured for " .. provider, vim.log.levels.ERROR)
     return
   end
   
-  -- For OpenAI-compatible APIs
-  local url = agent_config.base_url .. "/chat/completions"
+  -- Determine API endpoint based on provider type
+  local is_ollama = agent_config.base_url and agent_config.base_url:match("ollama") or provider == "ollama"
+  local endpoint = is_ollama and "/api/chat" or "/chat/completions"
+  local url = agent_config.base_url .. endpoint
+  
+  -- Build headers
   local headers = {
     ["Content-Type"] = "application/json",
-    ["Authorization"] = "Bearer " .. agent_config.api_key,
   }
   
-  -- Build request body with agent-specific settings
-  local request_body = {
-    model = agent_config.model,
-    messages = messages,
-    stream = true,
-  }
+  -- Add Authorization header only if API key is provided
+  if agent_config.api_key then
+    headers["Authorization"] = "Bearer " .. agent_config.api_key
+  end
   
-  -- Add optional parameters
-  if agent_config.temperature ~= nil then
-    request_body.temperature = agent_config.temperature
-  end
-  if agent_config.max_tokens ~= nil then
-    request_body.max_tokens = agent_config.max_tokens
-  end
-  if agent_config.top_p ~= nil then
-    request_body.top_p = agent_config.top_p
-  end
-  if agent_config.frequency_penalty ~= nil then
-    request_body.frequency_penalty = agent_config.frequency_penalty
-  end
-  if agent_config.presence_penalty ~= nil then
-    request_body.presence_penalty = agent_config.presence_penalty
+  -- Build request body - different format for Ollama vs OpenAI
+  local request_body
+  if is_ollama then
+    -- Ollama API format
+    request_body = {
+      model = agent_config.model,
+      messages = messages,
+      stream = true,
+    }
+    -- Ollama uses different parameter names
+    if agent_config.temperature ~= nil then
+      request_body.temperature = agent_config.temperature
+    end
+    if agent_config.num_predict ~= nil then
+      request_body.num_predict = agent_config.num_predict
+    elseif agent_config.max_tokens ~= nil then
+      request_body.num_predict = agent_config.max_tokens
+    end
+    if agent_config.top_p ~= nil then
+      request_body.top_p = agent_config.top_p
+    end
+  else
+    -- OpenAI-compatible API format
+    request_body = {
+      model = agent_config.model,
+      messages = messages,
+      stream = true,
+    }
+    -- Add optional parameters
+    if agent_config.temperature ~= nil then
+      request_body.temperature = agent_config.temperature
+    end
+    if agent_config.max_tokens ~= nil then
+      request_body.max_tokens = agent_config.max_tokens
+    end
+    if agent_config.top_p ~= nil then
+      request_body.top_p = agent_config.top_p
+    end
+    if agent_config.frequency_penalty ~= nil then
+      request_body.frequency_penalty = agent_config.frequency_penalty
+    end
+    if agent_config.presence_penalty ~= nil then
+      request_body.presence_penalty = agent_config.presence_penalty
+    end
   end
   
   local body = vim.json.encode(request_body)
   
-  -- Use HTTP client for streaming request
-  http.stream_request(url, headers, body, on_chunk, on_complete)
+  -- Use HTTP client for streaming request (with Ollama support)
+  http.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
 end
 
 function M.setup(config)

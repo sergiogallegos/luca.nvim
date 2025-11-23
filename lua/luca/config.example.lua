@@ -18,11 +18,14 @@ return {
       --   base_url = "https://api.anthropic.com/v1",
       -- },
       -- Example: Local Ollama
-      -- ollama = {
-      --   api_key = nil, -- Not needed for local
-      --   model = "llama2",
-      --   base_url = "http://localhost:11434/v1",
-      -- },
+      ollama = {
+        api_key = nil, -- Not needed for local Ollama
+        model = "llama2", -- or "mistral", "codellama", "deepseek-coder", etc.
+        base_url = "http://localhost:11434", -- Ollama default port
+        requires_api_key = false, -- Ollama doesn't need API key
+        temperature = 0.7,
+        num_predict = 2048, -- Ollama uses num_predict instead of max_tokens
+      },
     },
   },
   

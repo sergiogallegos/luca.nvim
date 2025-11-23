@@ -5,7 +5,9 @@ local M = {}
 
 local has_plenary, plenary = pcall(require, "plenary.curl")
 
-function M.stream_request(url, headers, body, on_chunk, on_complete)
+function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
+  is_ollama = is_ollama or false
+  
   if has_plenary then
     -- Use plenary for better async support
     local full_response = ""
@@ -17,24 +19,43 @@ function M.stream_request(url, headers, body, on_chunk, on_complete)
       body = body,
       stream = function(chunk)
         if chunk then
-          -- Parse SSE format
+          -- Parse SSE format (different for Ollama vs OpenAI)
           for line in chunk:gmatch("[^\r\n]+") do
-            if line:sub(1, 6) == "data: " then
-              local data_str = line:sub(7)
-              if data_str == "[DONE]" then
+            if is_ollama then
+              -- Ollama format: plain JSON lines
+              local ok, data = pcall(vim.json.decode, line)
+              if ok and data.message and data.message.content then
+                local content = data.message.content
+                full_response = full_response .. content
+                if on_chunk then
+                  on_chunk(content)
+                end
+              end
+              if ok and data.done then
                 if on_complete then
                   on_complete(full_response)
                 end
                 return
               end
-              
-              local ok, data = pcall(vim.json.decode, data_str)
-              if ok and data.choices and data.choices[1] and data.choices[1].delta then
-                local content = data.choices[1].delta.content
-                if content then
-                  full_response = full_response .. content
-                  if on_chunk then
-                    on_chunk(content)
+            else
+              -- OpenAI format: "data: {...}"
+              if line:sub(1, 6) == "data: " then
+                local data_str = line:sub(7)
+                if data_str == "[DONE]" then
+                  if on_complete then
+                    on_complete(full_response)
+                  end
+                  return
+                end
+                
+                local ok, data = pcall(vim.json.decode, data_str)
+                if ok and data.choices and data.choices[1] and data.choices[1].delta then
+                  local content = data.choices[1].delta.content
+                  if content then
+                    full_response = full_response .. content
+                    if on_chunk then
+                      on_chunk(content)
+                    end
                   end
                 end
               end
@@ -79,19 +100,35 @@ function M.stream_request(url, headers, body, on_chunk, on_complete)
     end
     
     for line in handle:lines() do
-      if line and line ~= "" and line:sub(1, 6) == "data: " then
-        local data_str = line:sub(7)
-        if data_str == "[DONE]" then
+      if is_ollama then
+        -- Ollama format: plain JSON lines
+        local ok, data = pcall(vim.json.decode, line)
+        if ok and data.message and data.message.content then
+          local content = data.message.content
+          full_response = full_response .. content
+          if on_chunk then
+            on_chunk(content)
+          end
+        end
+        if ok and data.done then
           break
         end
-        
-        local ok, data = pcall(vim.json.decode, data_str)
-        if ok and data.choices and data.choices[1] and data.choices[1].delta then
-          local content = data.choices[1].delta.content
-          if content then
-            full_response = full_response .. content
-            if on_chunk then
-              on_chunk(content)
+      else
+        -- OpenAI format
+        if line and line ~= "" and line:sub(1, 6) == "data: " then
+          local data_str = line:sub(7)
+          if data_str == "[DONE]" then
+            break
+          end
+          
+          local ok, data = pcall(vim.json.decode, data_str)
+          if ok and data.choices and data.choices[1] and data.choices[1].delta then
+            local content = data.choices[1].delta.content
+            if content then
+              full_response = full_response .. content
+              if on_chunk then
+                on_chunk(content)
+              end
             end
           end
         end
