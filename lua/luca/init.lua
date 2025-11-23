@@ -103,20 +103,28 @@ function M.setup(user_config)
   end, { desc = "Switch agent", nargs = "?" })
   
   vim.api.nvim_create_user_command("LucaApply", function(opts)
+    local inline_diff = require("luca.inline_diff")
+    local bufnr = vim.api.nvim_get_current_buf()
+    
+    -- Try to accept inline changes first
+    inline_diff.accept_all_changes(bufnr)
+    
+    -- Fallback to old method if no inline changes
     local patch = require("luca.patch")
-    -- Get last message from history
     local history = require("luca.history").get_current()
     if history and #history > 0 then
       local last_entry = history[#history]
       if last_entry.assistant then
         patch.apply_suggestion(last_entry.assistant, { open_files = true })
-      else
-        vim.notify("No suggestion to apply", vim.log.levels.WARN)
       end
-    else
-      vim.notify("No history available", vim.log.levels.WARN)
     end
-  end, { desc = "Apply last suggestion" })
+  end, { desc = "Accept and apply changes" })
+  
+  vim.api.nvim_create_user_command("LucaReject", function(opts)
+    local inline_diff = require("luca.inline_diff")
+    local bufnr = vim.api.nvim_get_current_buf()
+    inline_diff.reject_all_changes(bufnr)
+  end, { desc = "Reject all pending changes" })
   
   vim.api.nvim_create_user_command("LucaPreview", function()
     local patch = require("luca.patch")
