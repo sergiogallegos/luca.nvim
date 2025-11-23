@@ -5,11 +5,16 @@ local M = {}
 local pending_changes = {}  -- Track pending changes per buffer
 local namespace_id = vim.api.nvim_create_namespace("luca_inline_diff")
 
--- Highlight groups for diff
-vim.api.nvim_set_hl(0, "LucaDiffAdd", { fg = "#00ff00", bg = "#004400", bold = true })
-vim.api.nvim_set_hl(0, "LucaDiffDelete", { fg = "#ff0000", bg = "#440000", bold = true })
-vim.api.nvim_set_hl(0, "LucaDiffChange", { fg = "#ffff00", bg = "#444400", bold = true })
-vim.api.nvim_set_hl(0, "LucaDiffText", { fg = "#ffffff", bg = "#0000ff", bold = true })
+-- Highlight groups for diff (define once, use many times)
+local function setup_highlights()
+  vim.api.nvim_set_hl(0, "LucaDiffAdd", { fg = "#00ff00", bg = "#004400", bold = true })
+  vim.api.nvim_set_hl(0, "LucaDiffDelete", { fg = "#ff0000", bg = "#440000", bold = true })
+  vim.api.nvim_set_hl(0, "LucaDiffChange", { fg = "#ffff00", bg = "#444400", bold = true })
+  vim.api.nvim_set_hl(0, "LucaDiffText", { fg = "#ffffff", bg = "#0000ff", bold = true })
+end
+
+-- Setup highlights on load
+setup_highlights()
 
 -- Parse diff-like changes from AI response
 function M.parse_changes(text, current_file)
@@ -96,34 +101,49 @@ function M.show_inline_diff(bufnr, changes)
   -- Store changes for this buffer
   pending_changes[bufnr] = changes
   
-  -- Highlight deletions (red background)
+  -- Ensure highlights are set
+  setup_highlights()
+  
+  -- Highlight deletions (red background on the line)
   for _, del in ipairs(changes.deletions) do
     if del.line_num > 0 and del.line_num <= vim.api.nvim_buf_line_count(bufnr) then
-      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, del.line_num - 1, 0, {
+      local line_idx = del.line_num - 1
+      local line_text = vim.api.nvim_buf_get_lines(bufnr, line_idx, line_idx + 1, false)[1] or ""
+      local line_length = #line_text
+      
+      -- Highlight the entire line with red background
+      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, line_idx, 0, {
         hl_group = "LucaDiffDelete",
-        end_row = del.line_num - 1,
-        end_col = #vim.api.nvim_buf_get_lines(bufnr, del.line_num - 1, del.line_num, false)[1] or 0,
+        end_row = line_idx,
+        end_col = line_length,
+      })
+      
+      -- Add virtual text indicator
+      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, line_idx, 0, {
         virt_text = { { " - ", "LucaDiffDelete" } },
         virt_text_pos = "overlay",
       })
     end
   end
   
-  -- Show additions as virtual text below the line (green)
+  -- Show additions as virtual text (green) - show after the line
   for _, add in ipairs(changes.additions) do
     local line_num = add.line_num - 1
     if line_num >= 0 and line_num < vim.api.nvim_buf_line_count(bufnr) then
+      -- Show addition indicator on the line where it should be inserted
       vim.api.nvim_buf_set_extmark(bufnr, namespace_id, line_num, 0, {
         virt_text = { { "+ " .. add.line, "LucaDiffAdd" } },
         virt_text_pos = "eol",
-        hl_mode = "combine",
       })
     elseif line_num >= vim.api.nvim_buf_line_count(bufnr) then
       -- Addition at end of file
-      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, vim.api.nvim_buf_line_count(bufnr) - 1, 0, {
-        virt_text = { { "+ " .. add.line, "LucaDiffAdd" } },
-        virt_text_pos = "eol",
-      })
+      local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
+      if last_line >= 0 then
+        vim.api.nvim_buf_set_extmark(bufnr, namespace_id, last_line, 0, {
+          virt_text = { { "+ " .. add.line, "LucaDiffAdd" } },
+          virt_text_pos = "eol",
+        })
+      end
     end
   end
   
