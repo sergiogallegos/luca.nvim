@@ -1,0 +1,236 @@
+local M = {}
+
+-- Inline diff visualization with accept/reject functionality (Cursor-style)
+
+local pending_changes = {}  -- Track pending changes per buffer
+local namespace_id = vim.api.nvim_create_namespace("luca_inline_diff")
+
+-- Highlight groups for diff
+vim.api.nvim_set_hl(0, "LucaDiffAdd", { fg = "#00ff00", bg = "#004400", bold = true })
+vim.api.nvim_set_hl(0, "LucaDiffDelete", { fg = "#ff0000", bg = "#440000", bold = true })
+vim.api.nvim_set_hl(0, "LucaDiffChange", { fg = "#ffff00", bg = "#444400", bold = true })
+vim.api.nvim_set_hl(0, "LucaDiffText", { fg = "#ffffff", bg = "#0000ff", bold = true })
+
+-- Parse diff-like changes from AI response
+function M.parse_changes(text, current_file)
+  local changes = {
+    additions = {},
+    deletions = {},
+    modifications = {},
+  }
+  
+  -- Try to parse unified diff format
+  if text:match("^diff ") or text:match("^---") then
+    local diff = require("luca.diff")
+    local hunks = diff.parse_unified_diff(text)
+    for _, hunk in ipairs(hunks) do
+      if hunk.file == current_file or not hunk.file then
+        for _, line in ipairs(hunk.lines) do
+          if line:match("^%+") then
+            table.insert(changes.additions, {
+              line = line:sub(2),
+              line_num = hunk.start_old + #changes.additions,
+            })
+          elseif line:match("^-") then
+            table.insert(changes.deletions, {
+              line = line:sub(2),
+              line_num = hunk.start_old + #changes.deletions,
+            })
+          end
+        end
+      end
+    end
+    return changes
+  end
+  
+  -- Try to parse code blocks with context
+  local code_blocks = require("luca.patch").parse_code_blocks(text)
+  if #code_blocks > 0 then
+    -- Compare with current buffer to find differences
+    local bufnr = vim.fn.bufnr(current_file)
+    if bufnr == -1 then
+      bufnr = vim.api.nvim_get_current_buf()
+    end
+    
+    local current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local new_lines = vim.split(code_blocks[1].content, "\n")
+    
+    -- Simple line-by-line diff
+    local i = 1
+    local j = 1
+    while i <= #new_lines or j <= #current_lines do
+      if i <= #new_lines and j <= #current_lines then
+        if new_lines[i] ~= current_lines[j] then
+          -- Modified line
+          table.insert(changes.deletions, { line = current_lines[j], line_num = j })
+          table.insert(changes.additions, { line = new_lines[i], line_num = j })
+          i = i + 1
+          j = j + 1
+        else
+          i = i + 1
+          j = j + 1
+        end
+      elseif i <= #new_lines then
+        -- Addition
+        table.insert(changes.additions, { line = new_lines[i], line_num = j })
+        i = i + 1
+        j = j + 1
+      elseif j <= #current_lines then
+        -- Deletion
+        table.insert(changes.deletions, { line = current_lines[j], line_num = j })
+        j = j + 1
+      end
+    end
+  end
+  
+  return changes
+end
+
+-- Show inline diff visualization
+function M.show_inline_diff(bufnr, changes)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  
+  -- Clear existing highlights
+  vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)
+  
+  -- Store changes for this buffer
+  pending_changes[bufnr] = changes
+  
+  -- Highlight deletions (red background)
+  for _, del in ipairs(changes.deletions) do
+    if del.line_num > 0 and del.line_num <= vim.api.nvim_buf_line_count(bufnr) then
+      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, del.line_num - 1, 0, {
+        hl_group = "LucaDiffDelete",
+        end_row = del.line_num - 1,
+        end_col = #vim.api.nvim_buf_get_lines(bufnr, del.line_num - 1, del.line_num, false)[1] or 0,
+        virt_text = { { " - ", "LucaDiffDelete" } },
+        virt_text_pos = "overlay",
+      })
+    end
+  end
+  
+  -- Show additions as virtual text below the line (green)
+  for _, add in ipairs(changes.additions) do
+    local line_num = add.line_num - 1
+    if line_num >= 0 and line_num < vim.api.nvim_buf_line_count(bufnr) then
+      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, line_num, 0, {
+        virt_text = { { "+ " .. add.line, "LucaDiffAdd" } },
+        virt_text_pos = "eol",
+        hl_mode = "combine",
+      })
+    elseif line_num >= vim.api.nvim_buf_line_count(bufnr) then
+      -- Addition at end of file
+      vim.api.nvim_buf_set_extmark(bufnr, namespace_id, vim.api.nvim_buf_line_count(bufnr) - 1, 0, {
+        virt_text = { { "+ " .. add.line, "LucaDiffAdd" } },
+        virt_text_pos = "eol",
+      })
+    end
+  end
+  
+  -- Add keymaps for accept/reject
+  local config = require("luca").config()
+  vim.api.nvim_buf_set_keymap(bufnr, "n", config.keymaps.apply_suggestion or "<C-a>", "", {
+    callback = function()
+      M.accept_all_changes(bufnr)
+    end,
+    desc = "Accept all changes",
+  })
+  
+  vim.api.nvim_buf_set_keymap(bufnr, "n", config.keymaps.reject_suggestion or "<C-r>", "", {
+    callback = function()
+      M.reject_all_changes(bufnr)
+    end,
+    desc = "Reject all changes",
+  })
+  
+  vim.notify("Changes previewed. Press <C-a> to accept, <C-r> to reject", vim.log.levels.INFO)
+end
+
+-- Accept all changes
+function M.accept_all_changes(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local changes = pending_changes[bufnr]
+  
+  if not changes then
+    vim.notify("No pending changes to accept", vim.log.levels.WARN)
+    return
+  end
+  
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local new_lines = {}
+  local add_idx = 1
+  local del_idx = 1
+  
+  -- Apply changes (simplified - merge additions and deletions)
+  for i = 1, #lines do
+    -- Check if this line should be deleted
+    local should_delete = false
+    for _, del in ipairs(changes.deletions) do
+      if del.line_num == i then
+        should_delete = true
+        break
+      end
+    end
+    
+    if not should_delete then
+      table.insert(new_lines, lines[i])
+    end
+    
+    -- Check if we should add lines after this position
+    for _, add in ipairs(changes.additions) do
+      if add.line_num == i then
+        table.insert(new_lines, add.line)
+      end
+    end
+  end
+  
+  -- Handle additions at the end
+  for _, add in ipairs(changes.additions) do
+    if add.line_num > #lines then
+      table.insert(new_lines, add.line)
+    end
+  end
+  
+  -- Apply changes
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+  
+  -- Clear highlights
+  vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)
+  pending_changes[bufnr] = nil
+  
+  vim.notify("Changes accepted", vim.log.levels.INFO)
+end
+
+-- Reject all changes
+function M.reject_all_changes(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  
+  -- Clear highlights
+  vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)
+  pending_changes[bufnr] = nil
+  
+  vim.notify("Changes rejected", vim.log.levels.INFO)
+end
+
+-- Process AI response and show inline diff
+function M.process_ai_response(response, target_file)
+  target_file = target_file or vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+  local bufnr = vim.fn.bufnr(target_file)
+  
+  if bufnr == -1 then
+    -- File not open, open it first
+    vim.cmd("edit " .. target_file)
+    bufnr = vim.api.nvim_get_current_buf()
+  end
+  
+  local changes = M.parse_changes(response, target_file)
+  
+  if #changes.additions > 0 or #changes.deletions > 0 then
+    M.show_inline_diff(bufnr, changes)
+  else
+    vim.notify("No changes detected in response", vim.log.levels.WARN)
+  end
+end
+
+return M
+
