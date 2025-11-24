@@ -32,10 +32,10 @@ local default_config = {
   },
   context = {
     include_buffer = true,
-    include_tree = true,
-    max_files = 10,
+    include_tree = false,  -- Disabled by default for speed (file scanning is slow)
+    max_files = 0,  -- Set to 0 to disable project file scanning
     auto_attach = true,
-    use_lsp = true,
+    use_lsp = false,  -- Disabled by default for speed (LSP queries can be slow)
   },
   cache = {
     enabled = true,

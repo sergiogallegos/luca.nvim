@@ -173,37 +173,36 @@ function M.send_message(message, callback)
   -- Update statusline
   statusline.update(current_agent, agent_config.model, "thinking")
   
-  -- Get context quickly (only buffer, skip slow file scanning initially)
+  -- Get context quickly - MINIMAL context for speed
+  -- Only get current buffer, skip all slow operations
   local context = {}
+  
+  -- Only get buffer context (fast)
   if config.context and config.context.include_buffer then
     context.buffer = require("luca.context").get_buffer_context()
   end
   
-  -- Skip project files for speed (can be enabled in config if needed)
-  -- Users can enable it if they want, but it's slow
-  if config.context and config.context.include_tree and config.context.max_files and config.context.max_files > 0 then
-    -- Limit to 2 files for speed
-    local quick_context = require("luca.context")
-    local files = quick_context.get_context().files or {}
-    if #files > 2 then
-      context.files = { files[1], files[2] }  -- Only first 2
-    else
-      context.files = files
-    end
-  end
+  -- DISABLED by default for speed - project file scanning is too slow
+  -- Users can enable in config if they really need it
+  -- if config.context and config.context.include_tree and config.context.max_files and config.context.max_files > 0 then
+  --   -- This is slow, skip it
+  -- end
   
-  -- Trim context if needed
-  if config.tokens and config.tokens.enable_trimming then
-    context = tokens.trim_context(context, config.tokens.max_context_tokens)
-  end
+  -- DISABLED by default - LSP queries can be slow
+  -- if config.context.use_lsp then
+  --   local lsp = require("luca.lsp")
+  --   local ast_info = lsp.get_ast_info()
+  --   if ast_info then
+  --     context.lsp_info = lsp.format_lsp_context(ast_info)
+  --   end
+  -- end
   
-  -- Add LSP info if enabled (skip if slow)
-  if config.context.use_lsp then
-    local lsp = require("luca.lsp")
-    local ast_info = lsp.get_ast_info()
-    if ast_info then
-      context.lsp_info = lsp.format_lsp_context(ast_info)
-    end
+  -- Load memory files (fast - just file reads)
+  local memory = require("luca.memory")
+  local memory_context = memory.get_memory_context()
+  if memory_context then
+    -- Store for later use in system message
+    context.memory_context = memory_context
   end
   
   -- Check cache
@@ -222,30 +221,29 @@ function M.send_message(message, callback)
   -- Build messages
   local messages = {}
   
-  -- Add system message with context
+  -- Add system message with context (minimal for speed)
   if context then
     local system_message = "You are a helpful coding assistant for Neovim. "
     
-    -- Add memory files (project rules)
-    local memory = require("luca.memory")
-    local memory_context = memory.get_memory_context()
-    if memory_context then
-      system_message = system_message .. "\n\n" .. memory_context
+    -- Add memory files (project rules) - fast operation
+    if context.memory_context then
+      system_message = system_message .. "\n\n" .. context.memory_context
     end
     
-    if context.buffer then
-      system_message = system_message .. "\nCurrent file: " .. context.buffer.path
-      system_message = system_message .. "\nFile content:\n" .. context.buffer.content
-    end
-    if context.lsp_info then
-      system_message = system_message .. "\n\nLSP Information:\n" .. context.lsp_info
-    end
-    if context.files and #context.files > 0 then
-      system_message = system_message .. "\n\nRelevant files:\n"
-      for _, file in ipairs(context.files) do
-        system_message = system_message .. file.path .. "\n" .. file.content .. "\n\n"
+    -- Add current buffer (fast)
+    if context.buffer and context.buffer.path and context.buffer.path ~= "" then
+      system_message = system_message .. "\n\nCurrent file: " .. context.buffer.path
+      -- Only include buffer content if it's not too large (for speed)
+      if #context.buffer.content < 10000 then
+        system_message = system_message .. "\nFile content:\n" .. context.buffer.content
+      else
+        system_message = system_message .. "\nFile content: (file too large, showing first 5000 chars)\n" .. context.buffer.content:sub(1, 5000)
       end
     end
+    
+    -- Skip LSP info and project files for speed
+    -- Users can enable these in config if needed, but they're slow
+    
     table.insert(messages, { role = "system", content = system_message })
   end
   
