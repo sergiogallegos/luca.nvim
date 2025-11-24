@@ -59,9 +59,8 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
             local content = data.message.content
             full_response = full_response .. content
             if on_chunk then
-              vim.schedule(function()
-                on_chunk(content)
-              end)
+              -- Direct call for better performance, ui.lua will handle scheduling if needed
+              on_chunk(content)
             end
           end
           if data.done then
@@ -115,6 +114,7 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
                 if content then
                   full_response = full_response .. content
                   if on_chunk then
+                    -- Direct call for better performance
                     on_chunk(content)
                   end
                 end
@@ -196,6 +196,7 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
           local content = data.message.content
           full_response = full_response .. content
           if on_chunk then
+            -- Direct call for better performance
             on_chunk(content)
           end
         end
@@ -216,6 +217,7 @@ function M.stream_request(url, headers, body, on_chunk, on_complete, is_ollama)
             if content then
               full_response = full_response .. content
               if on_chunk then
+                -- Direct call for better performance
                 on_chunk(content)
               end
             end

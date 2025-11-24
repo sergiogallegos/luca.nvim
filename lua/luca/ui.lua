@@ -5,6 +5,13 @@ local chat_winid = nil
 local input_bufnr = nil
 local input_winid = nil
 
+-- Track streaming state
+local streaming_text = ""
+local streaming_line_idx = nil
+
+-- Track pending changes for Y/N prompt
+local pending_changes_prompt = nil
+
 local window = require("luca.window")
 local theme = require("luca.theme")
 local modes = require("luca.modes")
@@ -291,6 +298,17 @@ end
 
 function M.send_message()
   local message = M.get_input()
+  
+  -- Check if we're in prompt mode and handle Y/N
+  if pending_changes_prompt then
+    local trimmed = message:match("^%s*(.-)%s*$")  -- Trim whitespace
+    if trimmed == "Y" or trimmed == "y" or trimmed == "N" or trimmed == "n" or trimmed == "" then
+      if M.handle_apply_prompt(trimmed) then
+        return  -- Prompt handled, don't send as message
+      end
+    end
+  end
+  
   if message == "" or message == "\n" then
     return
   end
@@ -304,9 +322,38 @@ function M.send_message()
   -- Add user message to chat
   M.append_to_chat("You", message)
   
+  -- Reset streaming state
+  M.reset_streaming()
+  
   -- Send to agent
   require("luca.agent").send_message(message, function(response)
+    -- Reset streaming state
+    M.reset_streaming()
+    
+    -- Check if response contains code changes
+    local inline_diff = require("luca.inline_diff")
+    local current_file = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+    local has_changes = false
+    
+    if current_file and current_file ~= "" then
+      if response:match("```") or response:match("^diff ") or response:match("^---") then
+        has_changes = true
+        -- Show inline diff
+        vim.schedule(function()
+          inline_diff.process_ai_response(response, current_file)
+        end)
+      end
+    end
+    
+    -- Append response to chat
     M.append_to_chat("Luca", response)
+    
+    -- Show Y/N prompt if changes detected
+    if has_changes then
+      vim.schedule(function()
+        M.show_apply_prompt(current_file)
+      end)
+    end
   end)
 end
 
@@ -315,25 +362,45 @@ function M.stream_update(text)
     return
   end
   
-  -- Get last line
-  local line_count = vim.api.nvim_buf_line_count(chat_bufnr)
-  local last_line = vim.api.nvim_buf_get_lines(chat_bufnr, line_count - 1, line_count, false)[1] or ""
-  
-  -- Check if it's a Luca message
-  if not last_line:match("^🤖") then
-    M.append_to_chat("Luca", "")
-    line_count = vim.api.nvim_buf_line_count(chat_bufnr)
-    last_line = vim.api.nvim_buf_get_lines(chat_bufnr, line_count - 1, line_count, false)[1] or ""
+  -- Skip empty chunks
+  if not text or text == "" then
+    return
   end
   
-  -- Update last line with streaming text
-  local updated_line = last_line:gsub("🤖 Luca: .*", "🤖 Luca: " .. text)
-  vim.api.nvim_buf_set_lines(chat_bufnr, line_count - 1, line_count, false, { updated_line })
-  
-  -- Scroll to bottom
-  if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
-    vim.api.nvim_win_set_cursor(chat_winid, { line_count, 0 })
-  end
+  -- Use vim.schedule for UI updates to avoid blocking
+  vim.schedule(function()
+    -- Accumulate streaming text
+    streaming_text = streaming_text .. text
+    
+    -- Get last line
+    local line_count = vim.api.nvim_buf_line_count(chat_bufnr)
+    local last_line = vim.api.nvim_buf_get_lines(chat_bufnr, line_count - 1, line_count, false)[1] or ""
+    
+    -- Check if it's a Luca message, if not, start a new one
+    if not last_line:match("^🤖") or streaming_line_idx == nil then
+      -- Start new Luca message
+      streaming_text = text  -- Reset accumulated text
+      M.append_to_chat("Luca", "")
+      line_count = vim.api.nvim_buf_line_count(chat_bufnr)
+      streaming_line_idx = line_count - 1
+      last_line = vim.api.nvim_buf_get_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false)[1] or ""
+    end
+    
+    -- Update the streaming line with accumulated text
+    local updated_line = "🤖 Luca: " .. streaming_text
+    vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false, { updated_line })
+    
+    -- Scroll to bottom
+    if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
+      vim.api.nvim_win_set_cursor(chat_winid, { line_count, 0 })
+    end
+  end)
+end
+
+-- Reset streaming state (called when response is complete)
+function M.reset_streaming()
+  streaming_text = ""
+  streaming_line_idx = nil
 end
 
 function M.show_agent_selector()
@@ -392,6 +459,54 @@ function M.show_agent_selector()
       vim.api.nvim_win_close(winid, true)
     end,
   })
+end
+
+-- Show Y/N prompt for applying changes
+function M.show_apply_prompt(target_file)
+  if not chat_bufnr or not vim.api.nvim_buf_is_valid(chat_bufnr) then
+    return
+  end
+  
+  -- Store the target file for the prompt
+  pending_changes_prompt = target_file
+  
+  -- Add prompt to chat
+  M.append_to_chat("System", "Code changes detected. Apply changes? (Y/n): ")
+  
+  -- Focus input window
+  if input_winid and vim.api.nvim_win_is_valid(input_winid) then
+    vim.api.nvim_set_current_win(input_winid)
+  end
+end
+
+-- Handle Y/N prompt response (called from send_message when prompt is active)
+function M.handle_apply_prompt(choice)
+  if not pending_changes_prompt then
+    return false  -- Not in prompt mode
+  end
+  
+  local inline_diff = require("luca.inline_diff")
+  local bufnr = vim.fn.bufnr(pending_changes_prompt)
+  
+  if bufnr == -1 then
+    -- File not open, open it first
+    vim.cmd("edit " .. pending_changes_prompt)
+    bufnr = vim.api.nvim_get_current_buf()
+  end
+  
+  if choice == "Y" or choice == "y" or choice == "" then
+    -- Accept changes (empty choice defaults to Y)
+    inline_diff.accept_all_changes(bufnr)
+    M.append_to_chat("System", "Changes applied ✓")
+  else
+    -- Reject changes
+    inline_diff.reject_all_changes(bufnr)
+    M.append_to_chat("System", "Changes rejected ✗")
+  end
+  
+  -- Clear prompt state
+  pending_changes_prompt = nil
+  return true  -- Handled the prompt
 end
 
 return M

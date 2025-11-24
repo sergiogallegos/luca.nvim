@@ -22,6 +22,7 @@ function M.parse_changes(text, current_file)
     additions = {},
     deletions = {},
     modifications = {},
+    full_replacement = nil,  -- Store full file content for code blocks
   }
   
   -- Try to parse unified diff format
@@ -51,7 +52,10 @@ function M.parse_changes(text, current_file)
   -- Try to parse code blocks with context
   local code_blocks = require("luca.patch").parse_code_blocks(text)
   if #code_blocks > 0 then
-    -- Compare with current buffer to find differences
+    -- Store full replacement content for easier application
+    changes.full_replacement = code_blocks[1].content
+    
+    -- Also compute line-by-line diff for visualization
     local bufnr = vim.fn.bufnr(current_file)
     if bufnr == -1 then
       bufnr = vim.api.nvim_get_current_buf()
@@ -60,7 +64,7 @@ function M.parse_changes(text, current_file)
     local current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local new_lines = vim.split(code_blocks[1].content, "\n")
     
-    -- Simple line-by-line diff
+    -- Simple line-by-line diff for visualization
     local i = 1
     local j = 1
     while i <= #new_lines or j <= #current_lines do
@@ -176,43 +180,60 @@ function M.accept_all_changes(bufnr)
     return
   end
   
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  local new_lines = {}
-  local add_idx = 1
-  local del_idx = 1
-  
-  -- Apply changes (simplified - merge additions and deletions)
-  for i = 1, #lines do
-    -- Check if this line should be deleted
-    local should_delete = false
+  -- If we have a full replacement (from code blocks), use it directly
+  if changes.full_replacement then
+    local new_lines = vim.split(changes.full_replacement, "\n")
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+  else
+    -- Otherwise, apply line-by-line changes
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local new_lines = {}
+    
+    -- Sort deletions and additions by line number
+    local deletions_sorted = {}
     for _, del in ipairs(changes.deletions) do
-      if del.line_num == i then
-        should_delete = true
-        break
-      end
+      table.insert(deletions_sorted, del)
     end
+    table.sort(deletions_sorted, function(a, b) return a.line_num < b.line_num end)
     
-    if not should_delete then
-      table.insert(new_lines, lines[i])
-    end
-    
-    -- Check if we should add lines after this position
+    local additions_sorted = {}
     for _, add in ipairs(changes.additions) do
-      if add.line_num == i then
-        table.insert(new_lines, add.line)
+      table.insert(additions_sorted, add)
+    end
+    table.sort(additions_sorted, function(a, b) return a.line_num < b.line_num end)
+    
+    -- Apply changes
+    local del_idx = 1
+    local add_idx = 1
+    
+    for i = 1, #lines do
+      -- Check if this line should be deleted
+      local should_delete = false
+      if del_idx <= #deletions_sorted and deletions_sorted[del_idx].line_num == i then
+        should_delete = true
+        del_idx = del_idx + 1
+      end
+      
+      if not should_delete then
+        table.insert(new_lines, lines[i])
+      end
+      
+      -- Check if we should add lines at this position
+      while add_idx <= #additions_sorted and additions_sorted[add_idx].line_num == i do
+        table.insert(new_lines, additions_sorted[add_idx].line)
+        add_idx = add_idx + 1
       end
     end
-  end
-  
-  -- Handle additions at the end
-  for _, add in ipairs(changes.additions) do
-    if add.line_num > #lines then
-      table.insert(new_lines, add.line)
+    
+    -- Handle additions at the end
+    while add_idx <= #additions_sorted do
+      table.insert(new_lines, additions_sorted[add_idx].line)
+      add_idx = add_idx + 1
     end
+    
+    -- Apply changes
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
   end
-  
-  -- Apply changes
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
   
   -- Clear highlights
   vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)

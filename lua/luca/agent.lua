@@ -220,27 +220,21 @@ function M.send_message(message, callback)
     messages,
     function(chunk)
       statusline.update(current_agent, agent_config.model, "streaming")
+      -- Direct call without vim.schedule for better performance
       require("luca.ui").stream_update(chunk)
     end,
     function(full_response)
       statusline.update(current_agent, agent_config.model, "idle")
+      
+      -- Reset streaming state
+      require("luca.ui").reset_streaming()
       
       -- Cache response
       cache.set(cache_key, full_response)
       
       require("luca.history").add_entry(message, full_response)
       
-      -- Check if response contains code changes and show inline diff
-      local inline_diff = require("luca.inline_diff")
-      local current_file = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
-      if current_file and current_file ~= "" then
-        -- Try to detect if response contains code changes
-        if full_response:match("```") or full_response:match("^diff ") or full_response:match("^---") then
-          vim.schedule(function()
-            inline_diff.process_ai_response(full_response, current_file)
-          end)
-        end
-      end
+      -- Note: Code change detection and Y/N prompt is now handled in ui.lua send_message callback
       
       if callback then
         callback(full_response)
