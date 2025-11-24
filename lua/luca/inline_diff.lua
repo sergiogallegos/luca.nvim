@@ -5,6 +5,9 @@ local M = {}
 local pending_changes = {}  -- Track pending changes per buffer
 local namespace_id = vim.api.nvim_create_namespace("luca_inline_diff")
 
+-- Export for external access
+M.pending_changes = pending_changes
+
 -- Highlight groups for diff (define once, use many times)
 local function setup_highlights()
   vim.api.nvim_set_hl(0, "LucaDiffAdd", { fg = "#00ff00", bg = "#004400", bold = true })
@@ -52,11 +55,24 @@ function M.parse_changes(text, current_file)
   -- Try to parse code blocks with context
   local code_blocks = require("luca.patch").parse_code_blocks(text)
   if #code_blocks > 0 then
+    -- Use file path from code block if available (like avante.nvim)
+    local target_file = current_file
+    if code_blocks[1].file_path then
+      -- Resolve relative paths
+      local cwd = vim.fn.getcwd()
+      if vim.fn.filereadable(code_blocks[1].file_path) == 1 then
+        target_file = vim.fn.fnamemodify(code_blocks[1].file_path, ":p")
+      elseif vim.fn.filereadable(cwd .. "/" .. code_blocks[1].file_path) == 1 then
+        target_file = vim.fn.fnamemodify(cwd .. "/" .. code_blocks[1].file_path, ":p")
+      end
+    end
+    
     -- Store full replacement content for easier application
     changes.full_replacement = code_blocks[1].content
+    changes.target_file = target_file  -- Store target file for later use
     
     -- Also compute line-by-line diff for visualization
-    local bufnr = vim.fn.bufnr(current_file)
+    local bufnr = vim.fn.bufnr(target_file)
     if bufnr == -1 then
       bufnr = vim.api.nvim_get_current_buf()
     end
@@ -103,6 +119,11 @@ function M.show_inline_diff(bufnr, changes)
   vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)
   
   -- Store changes for this buffer
+  -- Also store by file path for lookup
+  local file_path = vim.api.nvim_buf_get_name(bufnr)
+  if file_path and file_path ~= "" then
+    changes.target_file = vim.fn.fnamemodify(file_path, ":p")
+  end
   pending_changes[bufnr] = changes
   
   -- Ensure highlights are set
@@ -180,6 +201,9 @@ function M.accept_all_changes(bufnr)
     return
   end
   
+  -- Get file path for saving
+  local file_path = vim.api.nvim_buf_get_name(bufnr)
+  
   -- If we have a full replacement (from code blocks), use it directly
   if changes.full_replacement then
     local new_lines = vim.split(changes.full_replacement, "\n")
@@ -235,11 +259,23 @@ function M.accept_all_changes(bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
   end
   
+  -- Mark buffer as modified and save to disk (like avante.nvim does)
+  vim.api.nvim_buf_set_option(bufnr, "modified", true)
+  
+  -- Save the file to disk
+  if file_path and file_path ~= "" then
+    -- Use vim.cmd to save, which handles all edge cases
+    vim.cmd("write " .. vim.fn.fnameescape(file_path))
+  else
+    -- If no file path, try to save current buffer
+    vim.cmd("write")
+  end
+  
   -- Clear highlights
   vim.api.nvim_buf_clear_namespace(bufnr, namespace_id, 0, -1)
   pending_changes[bufnr] = nil
   
-  vim.notify("Changes accepted", vim.log.levels.INFO)
+  vim.notify("Changes applied and saved to file", vim.log.levels.INFO)
 end
 
 -- Reject all changes
@@ -255,21 +291,78 @@ end
 
 -- Process AI response and show inline diff
 function M.process_ai_response(response, target_file)
-  target_file = target_file or vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
-  local bufnr = vim.fn.bufnr(target_file)
+  -- Try to detect file from response first (like avante.nvim does)
+  local detected_file = target_file
   
-  if bufnr == -1 then
-    -- File not open, open it first
-    vim.cmd("edit " .. target_file)
-    bufnr = vim.api.nvim_get_current_buf()
+  -- Look for file mentions in the response (e.g., "Here's the updated main.c:")
+  local file_patterns = {
+    "([%w%._%-/]+%.%w+)",  -- filename.ext
+    "file:%s*([%w%._%-/]+)",  -- file: path
+  }
+  
+  for _, pattern in ipairs(file_patterns) do
+    local found = response:match(pattern)
+    if found then
+      -- Try to resolve the file path
+      local cwd = vim.fn.getcwd()
+      if vim.fn.filereadable(found) == 1 then
+        detected_file = vim.fn.fnamemodify(found, ":p")
+        break
+      elseif vim.fn.filereadable(cwd .. "/" .. found) == 1 then
+        detected_file = vim.fn.fnamemodify(cwd .. "/" .. found, ":p")
+        break
+      end
+    end
   end
   
-  local changes = M.parse_changes(response, target_file)
+  -- Fallback to current buffer or provided target
+  if not detected_file or detected_file == "" then
+    detected_file = target_file or vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
+  end
   
-  if #changes.additions > 0 or #changes.deletions > 0 then
+  -- Resolve to absolute path
+  if detected_file and detected_file ~= "" then
+    detected_file = vim.fn.fnamemodify(detected_file, ":p")
+  end
+  
+  -- Parse changes first to get target file from code blocks if available
+  local changes = M.parse_changes(response, detected_file)
+  
+  -- Use target file from changes if available
+  if changes.target_file then
+    detected_file = changes.target_file
+  end
+  
+  -- Get or open the buffer
+  local bufnr = vim.fn.bufnr(detected_file)
+  
+  if bufnr == -1 then
+    -- File not open, try to open it
+    if detected_file and detected_file ~= "" then
+      vim.cmd("edit " .. vim.fn.fnameescape(detected_file))
+      bufnr = vim.api.nvim_get_current_buf()
+      -- Update detected_file to actual buffer name
+      detected_file = vim.api.nvim_buf_get_name(bufnr)
+    else
+      -- If file doesn't exist, use current buffer
+      bufnr = vim.api.nvim_get_current_buf()
+      detected_file = vim.api.nvim_buf_get_name(bufnr)
+    end
+  else
+    -- Buffer exists, get its actual path
+    detected_file = vim.api.nvim_buf_get_name(bufnr)
+  end
+  
+  -- Store the file path in changes for later reference
+  changes.target_file = detected_file
+  
+  if #changes.additions > 0 or #changes.deletions > 0 or changes.full_replacement then
     M.show_inline_diff(bufnr, changes)
+    -- Return the file path so UI can store it
+    return detected_file
   else
     vim.notify("No changes detected in response", vim.log.levels.WARN)
+    return nil
   end
 end
 

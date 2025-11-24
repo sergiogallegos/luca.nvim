@@ -363,14 +363,19 @@ function M.send_message()
     local current_file = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf())
     local has_changes = false
     
-    if current_file and current_file ~= "" then
-      if response:match("```") or response:match("^diff ") or response:match("^---") then
-        has_changes = true
-        -- Show inline diff
-        vim.schedule(function()
-          inline_diff.process_ai_response(response, current_file)
-        end)
-      end
+    -- Detect code blocks or diffs in response
+    if response:match("```") or response:match("^diff ") or response:match("^---") or response:match("```%w+") then
+      has_changes = true
+      -- Show inline diff (will auto-detect file from response or use current)
+      vim.schedule(function()
+        local detected_file = inline_diff.process_ai_response(response, current_file)
+        -- Update pending_changes_prompt with the actual detected file
+        if detected_file then
+          pending_changes_prompt = detected_file
+        else
+          pending_changes_prompt = current_file
+        end
+      end)
     end
     
     -- Append response to chat
@@ -649,18 +654,72 @@ function M.handle_apply_prompt(choice)
   end
   
   local inline_diff = require("luca.inline_diff")
-  local bufnr = vim.fn.bufnr(pending_changes_prompt)
+  
+  -- Resolve to absolute path
+  local file_path = vim.fn.fnamemodify(pending_changes_prompt, ":p")
+  local bufnr = vim.fn.bufnr(file_path)
   
   if bufnr == -1 then
     -- File not open, open it first
-    vim.cmd("edit " .. pending_changes_prompt)
+    vim.cmd("edit " .. vim.fn.fnameescape(file_path))
     bufnr = vim.api.nvim_get_current_buf()
+    -- Update file_path to actual buffer name
+    file_path = vim.api.nvim_buf_get_name(bufnr)
+  else
+    -- Buffer exists, get its actual path
+    file_path = vim.api.nvim_buf_get_name(bufnr)
+  end
+  
+  -- Try to find changes by file path if bufnr lookup fails
+  local changes_found = false
+  if inline_diff.pending_changes and inline_diff.pending_changes[bufnr] then
+    changes_found = true
+  else
+    -- Try to find by file path in all pending changes
+    for b, ch in pairs(inline_diff.pending_changes or {}) do
+      if ch.target_file == file_path then
+        bufnr = b
+        changes_found = true
+        break
+      end
+    end
+  end
+  
+  if not changes_found then
+    vim.notify("No pending changes found for " .. file_path, vim.log.levels.WARN)
+    pending_changes_prompt = nil
+    return true
   end
   
   if choice == "Y" or choice == "y" or choice == "" then
     -- Accept changes (empty choice defaults to Y)
-    inline_diff.accept_all_changes(bufnr)
-    M.append_to_chat("System", "Changes applied ✓")
+    local success = pcall(function()
+      inline_diff.accept_all_changes(bufnr)
+    end)
+    
+    if not success then
+      -- Fallback: try to apply directly from last response
+      vim.notify("Trying fallback: applying changes directly...", vim.log.levels.INFO)
+      local history = require("luca.history").get_current()
+      if history and #history > 0 then
+        local last_response = history[#history].assistant
+        if last_response then
+          local patch = require("luca.patch")
+          local code_blocks = patch.parse_code_blocks(last_response)
+          if #code_blocks > 0 then
+            local new_lines = vim.split(code_blocks[1].content, "\n")
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+            vim.api.nvim_buf_set_option(bufnr, "modified", true)
+            vim.cmd("write " .. vim.fn.fnameescape(file_path))
+            M.append_to_chat("System", "Changes applied ✓ (fallback method)")
+          else
+            M.append_to_chat("System", "Failed to apply changes ✗")
+          end
+        end
+      end
+    else
+      M.append_to_chat("System", "Changes applied ✓")
+    end
   else
     -- Reject changes
     inline_diff.reject_all_changes(bufnr)

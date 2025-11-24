@@ -7,14 +7,28 @@ function M.parse_code_blocks(text)
   local current_block = nil
   local in_block = false
   local language = nil
+  local file_path = nil
   
   for line in text:gmatch("[^\n]+") do
-    -- Check for code block start
-    local lang_match = line:match("^```(%w*)")
+    -- Check for code block start - also check for file path in language spec
+    -- e.g., ```c:main.c or ```main.c or ```c
+    local lang_match = line:match("^```([%w%._%-/:]+)")
     if lang_match then
       in_block = true
-      language = lang_match ~= "" and lang_match or nil
-      current_block = { language = language, lines = {} }
+      -- Try to extract file path from language spec (like avante.nvim)
+      if lang_match:match(":") then
+        local parts = vim.split(lang_match, ":", { plain = true })
+        language = parts[1]
+        file_path = parts[2]
+      elseif lang_match:match("%.%w+$") then
+        -- Looks like a file path (has extension)
+        file_path = lang_match
+        language = nil
+      else
+        language = lang_match
+        file_path = nil
+      end
+      current_block = { language = language, file_path = file_path, lines = {} }
     -- Check for code block end
     elseif line == "```" and in_block then
       if current_block then
@@ -24,6 +38,7 @@ function M.parse_code_blocks(text)
       in_block = false
       current_block = nil
       language = nil
+      file_path = nil
     -- Add line to current block
     elseif in_block and current_block then
       table.insert(current_block.lines, line)
