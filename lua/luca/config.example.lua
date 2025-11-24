@@ -12,10 +12,24 @@ return {
         base_url = "https://api.openai.com/v1",
       },
       -- Example: Anthropic Claude
-      -- claude = {
-      --   api_key = os.getenv("ANTHROPIC_API_KEY"),
-      --   model = "claude-3-opus-20240229",
-      --   base_url = "https://api.anthropic.com/v1",
+      claude = {
+        api_key = os.getenv("ANTHROPIC_API_KEY"),
+        model = "claude-3-5-sonnet-20241022",
+        base_url = "https://api.anthropic.com",
+        temperature = 0.7,
+        max_tokens = 4096,
+      },
+      -- Example: DeepSeek (OpenAI-compatible)
+      -- deepseek = {
+      --   api_key = os.getenv("DEEPSEEK_API_KEY"),
+      --   model = "deepseek-chat",
+      --   base_url = "https://api.deepseek.com/v1",
+      -- },
+      -- Example: Google Gemini (requires API key)
+      -- gemini = {
+      --   api_key = os.getenv("GEMINI_API_KEY"),
+      --   model = "gemini-pro",
+      --   base_url = "https://generativelanguage.googleapis.com",
       -- },
       -- Example: Local Ollama
       ollama = {

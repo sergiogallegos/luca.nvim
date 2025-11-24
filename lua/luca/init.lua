@@ -80,6 +80,7 @@ function M.setup(user_config)
   require("luca.tools").setup()
   require("luca.cache").setup(config.cache or {})
   require("luca.embeddings").setup()
+  require("luca.sessions").setup()
   
   -- Setup commands
   vim.api.nvim_create_user_command("LucaChat", function()
@@ -144,6 +145,10 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("LucaCommand", function()
     require("luca.commands").show_palette()
   end, { desc = "Show commands palette" })
+  
+  vim.api.nvim_create_user_command("LucaActions", function()
+    require("luca.quick_actions").show_menu()
+  end, { desc = "Show quick actions menu" })
   
   vim.api.nvim_create_user_command("LucaReview", function()
     require("luca.review").start_review()

@@ -16,6 +16,8 @@ local function make_request(provider, messages, on_chunk, on_complete)
   
   -- Determine API endpoint based on provider type
   local is_ollama = agent_config.base_url and agent_config.base_url:match("ollama") or provider == "ollama"
+  local is_anthropic = agent_config.base_url and agent_config.base_url:match("anthropic") or provider == "claude" or provider:match("anthropic")
+  local is_gemini = agent_config.base_url and agent_config.base_url:match("gemini") or provider == "gemini" or provider:match("google")
   local is_local = is_ollama or (agent_config.base_url and agent_config.base_url:match("localhost")) or (agent_config.base_url and agent_config.base_url:match("127%.0%.0%.1"))
   
   -- Check if API key is required (Ollama and other local providers don't need it)
@@ -29,7 +31,19 @@ local function make_request(provider, messages, on_chunk, on_complete)
     vim.notify("No API key configured for " .. provider, vim.log.levels.ERROR)
     return
   end
-  local endpoint = is_ollama and "/api/chat" or "/chat/completions"
+  
+  -- Determine endpoint based on provider
+  local endpoint
+  if is_ollama then
+    endpoint = "/api/chat"
+  elseif is_anthropic then
+    endpoint = "/v1/messages"
+  elseif is_gemini then
+    endpoint = "/v1beta/models/" .. agent_config.model .. ":streamGenerateContent"
+  else
+    endpoint = "/chat/completions"  -- OpenAI-compatible
+  end
+  
   local url = agent_config.base_url .. endpoint
   
   -- Build headers
@@ -37,12 +51,19 @@ local function make_request(provider, messages, on_chunk, on_complete)
     ["Content-Type"] = "application/json",
   }
   
-  -- Add Authorization header only if API key is provided
+  -- Add Authorization header based on provider
   if agent_config.api_key then
-    headers["Authorization"] = "Bearer " .. agent_config.api_key
+    if is_anthropic then
+      headers["x-api-key"] = agent_config.api_key
+      headers["anthropic-version"] = "2023-06-01"
+    elseif is_gemini then
+      headers["Authorization"] = "Bearer " .. agent_config.api_key
+    else
+      headers["Authorization"] = "Bearer " .. agent_config.api_key
+    end
   end
   
-  -- Build request body - different format for Ollama vs OpenAI
+  -- Build request body - different format for different providers
   local request_body
   if is_ollama then
     -- Ollama API format
@@ -63,8 +84,34 @@ local function make_request(provider, messages, on_chunk, on_complete)
     if agent_config.top_p ~= nil then
       request_body.top_p = agent_config.top_p
     end
+  elseif is_anthropic then
+    -- Anthropic Claude API format
+    request_body = {
+      model = agent_config.model,
+      messages = messages,
+      max_tokens = agent_config.max_tokens or 4096,
+      stream = true,
+    }
+    if agent_config.temperature ~= nil then
+      request_body.temperature = agent_config.temperature
+    end
+    if agent_config.top_p ~= nil then
+      request_body.top_p = agent_config.top_p
+    end
+  elseif is_gemini then
+    -- Google Gemini API format (simplified)
+    -- Note: Gemini API format is more complex, this is a basic implementation
+    request_body = {
+      contents = {},  -- Would need to convert messages format
+    }
+    -- For now, fall back to OpenAI format for Gemini
+    request_body = {
+      model = agent_config.model,
+      messages = messages,
+      stream = true,
+    }
   else
-    -- OpenAI-compatible API format
+    -- OpenAI-compatible API format (OpenAI, DeepSeek, etc.)
     request_body = {
       model = agent_config.model,
       messages = messages,
@@ -178,6 +225,14 @@ function M.send_message(message, callback)
   -- Add system message with context
   if context then
     local system_message = "You are a helpful coding assistant for Neovim. "
+    
+    -- Add memory files (project rules)
+    local memory = require("luca.memory")
+    local memory_context = memory.get_memory_context()
+    if memory_context then
+      system_message = system_message .. "\n\n" .. memory_context
+    end
+    
     if context.buffer then
       system_message = system_message .. "\nCurrent file: " .. context.buffer.path
       system_message = system_message .. "\nFile content:\n" .. context.buffer.content
@@ -214,6 +269,10 @@ function M.send_message(message, callback)
   -- Add current message
   table.insert(messages, { role = "user", content = message })
   
+  -- Store in session
+  local sessions = require("luca.sessions")
+  sessions.add_message("user", message)
+  
   -- Make request
   make_request(
     current_agent,
@@ -233,6 +292,10 @@ function M.send_message(message, callback)
       cache.set(cache_key, full_response)
       
       require("luca.history").add_entry(message, full_response)
+      
+      -- Store in session
+      local sessions = require("luca.sessions")
+      sessions.add_message("assistant", full_response)
       
       -- Note: Code change detection and Y/N prompt is now handled in ui.lua send_message callback
       

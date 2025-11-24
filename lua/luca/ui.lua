@@ -171,6 +171,34 @@ local function create_floating_window(config)
     end,
   })
   
+  -- Settings window toggle (like ChatGPT.nvim)
+  vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<C-o>", "", {
+    callback = function()
+      require("luca.settings").toggle()
+    end,
+  })
+  
+  -- Help window toggle (like ChatGPT.nvim)
+  vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<C-h>", "", {
+    callback = function()
+      require("luca.help").toggle()
+    end,
+  })
+  
+  -- Session management (like ChatGPT.nvim)
+  vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<C-p>", "", {
+    callback = function()
+      M.show_sessions_list()
+    end,
+  })
+  
+  vim.api.nvim_buf_set_keymap(chat_bufnr, "n", "<C-n>", "", {
+    callback = function()
+      require("luca.sessions").new_session()
+      M.append_to_chat("System", "New session started")
+    end,
+  })
+  
   vim.api.nvim_buf_set_keymap(chat_bufnr, "n", luca_config.keymaps.history_prev, "", {
     callback = function()
       require("luca.history").navigate_prev()
@@ -403,6 +431,10 @@ function M.reset_streaming()
   streaming_line_idx = nil
 end
 
+function M.get_chat_winid()
+  return chat_winid
+end
+
 function M.show_agent_selector()
   local agent = require("luca.agent")
   local agents = agent.list_agents()
@@ -459,6 +491,94 @@ function M.show_agent_selector()
       vim.api.nvim_win_close(winid, true)
     end,
   })
+end
+
+function M.show_sessions_list()
+  local sessions = require("luca.sessions")
+  local session_list = sessions.list_sessions()
+  local current_id = sessions.get_current_session_id()
+  
+  if #session_list == 0 then
+    vim.notify("No sessions available", vim.log.levels.WARN)
+    return
+  end
+  
+  local width = 50
+  local height = #session_list + 5
+  local col = math.floor((vim.o.columns - width) / 2)
+  local row = math.floor((vim.o.lines - height) / 2)
+  
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, "luca-sessions")
+  
+  local lines = { "Sessions:", "" }
+  for i, session in ipairs(session_list) do
+    local marker = session.id == current_id and "✓ " or "  "
+    table.insert(lines, string.format("%s%d. %s (%d messages)", marker, i, session.name, session.message_count))
+  end
+  table.insert(lines, "")
+  table.insert(lines, "Press number to switch, n for new, q to cancel")
+  
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  
+  local winid = vim.api.nvim_open_win(bufnr, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    col = col,
+    row = row,
+    border = "rounded",
+    title = " Sessions ",
+    style = "minimal",
+  })
+  
+  -- Add keymaps
+  for i = 1, #session_list do
+    vim.api.nvim_buf_set_keymap(bufnr, "n", tostring(i), "", {
+      callback = function()
+        sessions.set_session(session_list[i].id)
+        vim.api.nvim_win_close(winid, true)
+        M.append_to_chat("System", "Switched to: " .. session_list[i].name)
+        -- Reload session messages into chat
+        M.reload_session_messages()
+      end,
+    })
+  end
+  
+  vim.api.nvim_buf_set_keymap(bufnr, "n", "n", "", {
+    callback = function()
+      vim.api.nvim_win_close(winid, true)
+      sessions.new_session()
+      M.append_to_chat("System", "New session started")
+    end,
+  })
+  
+  vim.api.nvim_buf_set_keymap(bufnr, "n", "q", "", {
+    callback = function()
+      vim.api.nvim_win_close(winid, true)
+    end,
+  })
+end
+
+function M.reload_session_messages()
+  if not chat_bufnr or not vim.api.nvim_buf_is_valid(chat_bufnr) then
+    return
+  end
+  
+  -- Clear chat buffer
+  vim.api.nvim_buf_set_lines(chat_bufnr, 0, -1, false, {})
+  
+  -- Load session messages
+  local sessions = require("luca.sessions")
+  local messages = sessions.get_messages()
+  
+  for _, msg in ipairs(messages) do
+    if msg.role == "user" then
+      M.append_to_chat("You", msg.content)
+    elseif msg.role == "assistant" then
+      M.append_to_chat("Luca", msg.content)
+    end
+  end
 end
 
 -- Show Y/N prompt for applying changes
