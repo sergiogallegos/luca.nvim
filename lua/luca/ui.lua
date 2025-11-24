@@ -385,6 +385,10 @@ function M.send_message()
   end)
 end
 
+-- Throttle streaming updates to improve performance
+local last_update_time = 0
+local update_throttle_ms = 50  -- Update at most every 50ms
+
 function M.stream_update(text)
   if not chat_bufnr or not vim.api.nvim_buf_is_valid(chat_bufnr) then
     return
@@ -395,10 +399,21 @@ function M.stream_update(text)
     return
   end
   
+  -- Accumulate streaming text (do this immediately, not in schedule)
+  streaming_text = streaming_text .. text
+  
+  -- Throttle UI updates for better performance
+  local current_time = vim.loop.now()
+  if current_time - last_update_time < update_throttle_ms then
+    return  -- Skip this update, will be handled by next one
+  end
+  last_update_time = current_time
+  
   -- Use vim.schedule for UI updates to avoid blocking
   vim.schedule(function()
-    -- Accumulate streaming text
-    streaming_text = streaming_text .. text
+    if not chat_bufnr or not vim.api.nvim_buf_is_valid(chat_bufnr) then
+      return
+    end
     
     -- Get last line
     local line_count = vim.api.nvim_buf_line_count(chat_bufnr)
@@ -414,13 +429,40 @@ function M.stream_update(text)
       last_line = vim.api.nvim_buf_get_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false)[1] or ""
     end
     
-    -- Update the streaming line with accumulated text
-    local updated_line = "🤖 Luca: " .. streaming_text
-    vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false, { updated_line })
+    -- Split accumulated text by newlines to handle multi-line content properly
+    local lines = vim.split(streaming_text, "\n", { plain = true })
+    
+    if #lines == 1 then
+      -- Single line, update directly
+      local updated_line = "🤖 Luca: " .. streaming_text
+      vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false, { updated_line })
+    else
+      -- Multiple lines: update first line, then add remaining lines
+      local first_line = "🤖 Luca: " .. lines[1]
+      local remaining_lines = {}
+      for i = 2, #lines do
+        table.insert(remaining_lines, "  " .. lines[i])
+      end
+      
+      -- Update first line
+      vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx, streaming_line_idx + 1, false, { first_line })
+      
+      -- Add remaining lines if they don't exist yet
+      local current_line_count = vim.api.nvim_buf_line_count(chat_bufnr)
+      if current_line_count <= streaming_line_idx + 1 then
+        -- Add new lines
+        vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx + 1, streaming_line_idx + 1, false, remaining_lines)
+      else
+        -- Update existing lines
+        local end_idx = math.min(streaming_line_idx + #remaining_lines, current_line_count - 1)
+        vim.api.nvim_buf_set_lines(chat_bufnr, streaming_line_idx + 1, end_idx + 1, false, remaining_lines)
+      end
+    end
     
     -- Scroll to bottom
     if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
-      vim.api.nvim_win_set_cursor(chat_winid, { line_count, 0 })
+      local final_line_count = vim.api.nvim_buf_line_count(chat_bufnr)
+      vim.api.nvim_win_set_cursor(chat_winid, { final_line_count, 0 })
     end
   end)
 end
@@ -429,6 +471,7 @@ end
 function M.reset_streaming()
   streaming_text = ""
   streaming_line_idx = nil
+  last_update_time = 0
 end
 
 function M.get_chat_winid()
